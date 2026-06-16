@@ -1,0 +1,6 @@
+logs/
+output/
+data/seen_awards.json
+__pycache__/
+*.pyc
+.env

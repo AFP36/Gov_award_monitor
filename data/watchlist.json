@@ -1,0 +1,244 @@
+{
+  "watchlist": [
+    {
+      "ticker": "KTOS",
+      "name": "Kratos Defense & Security Solutions",
+      "search_names": ["Kratos Defense", "Kratos Unmanned", "Kratos Government"],
+      "sectors": ["defense", "drone"],
+      "market_cap_tier": "small-mid",
+      "annual_revenue_m": 1100,
+      "exchange": "NASDAQ",
+      "notes": "Valkyrie jet drone, hypersonics, satellite comms"
+    },
+    {
+      "ticker": "AVAV",
+      "name": "AeroVironment Inc",
+      "search_names": ["AeroVironment", "BlueHalo"],
+      "sectors": ["defense", "drone"],
+      "market_cap_tier": "small-mid",
+      "annual_revenue_m": 750,
+      "exchange": "NASDAQ",
+      "notes": "Switchblade loitering munition, Puma ISR, counter-UAS"
+    },
+    {
+      "ticker": "MRCY",
+      "name": "Mercury Systems Inc",
+      "search_names": ["Mercury Systems", "Mercury Defense"],
+      "sectors": ["defense"],
+      "market_cap_tier": "small-mid",
+      "annual_revenue_m": 900,
+      "exchange": "NASDAQ",
+      "notes": "Rugged mission processing, radar electronics, classified programs"
+    },
+    {
+      "ticker": "RCAT",
+      "name": "Red Cat Holdings Inc",
+      "search_names": ["Red Cat Holdings", "Teal Drones", "FlightWave"],
+      "sectors": ["drone"],
+      "market_cap_tier": "small",
+      "annual_revenue_m": 30,
+      "exchange": "NASDAQ",
+      "notes": "Army SRR Black Widow drone, NATO listed, Blue UAS"
+    },
+    {
+      "ticker": "ONDS",
+      "name": "Ondas Holdings Inc",
+      "search_names": ["Ondas Holdings", "Airobotics", "American Robotics"],
+      "sectors": ["drone", "border"],
+      "market_cap_tier": "micro",
+      "annual_revenue_m": 15,
+      "exchange": "NASDAQ",
+      "notes": "DoD autonomous systems, border security drones"
+    },
+    {
+      "ticker": "UMAC",
+      "name": "Unusual Machines Inc",
+      "search_names": ["Unusual Machines"],
+      "sectors": ["drone", "defense"],
+      "market_cap_tier": "micro",
+      "annual_revenue_m": 8,
+      "exchange": "NYSE",
+      "notes": "US-made drone components, Blue UAS supplier"
+    },
+    {
+      "ticker": "DPRO",
+      "name": "Draganfly Inc",
+      "search_names": ["Draganfly"],
+      "sectors": ["drone"],
+      "market_cap_tier": "micro",
+      "annual_revenue_m": 5,
+      "exchange": "NASDAQ",
+      "notes": "Logistics, medical, border drone support"
+    },
+    {
+      "ticker": "BBAI",
+      "name": "BigBear.ai Holdings Inc",
+      "search_names": ["BigBear.ai", "BigBear AI", "ProModel", "Goldbelt"],
+      "sectors": ["ai", "defense", "intel"],
+      "market_cap_tier": "small-mid",
+      "annual_revenue_m": 138,
+      "exchange": "NYSE",
+      "notes": "US Army GFIM-OE, national security AI, Ask Sage GenAI"
+    },
+    {
+      "ticker": "SOUN",
+      "name": "SoundHound AI Inc",
+      "search_names": ["SoundHound AI", "SoundHound"],
+      "sectors": ["ai"],
+      "market_cap_tier": "small-mid",
+      "annual_revenue_m": 85,
+      "exchange": "NASDAQ",
+      "notes": "DoD voice AI, Dept of Transportation contracts"
+    },
+    {
+      "ticker": "PL",
+      "name": "Planet Labs PBC",
+      "search_names": ["Planet Labs", "Planet Federal"],
+      "sectors": ["space", "isr"],
+      "market_cap_tier": "small-mid",
+      "annual_revenue_m": 240,
+      "exchange": "NYSE",
+      "notes": "NRO, DoD, State Dept EO imagery, 98% recurring revenue"
+    },
+    {
+      "ticker": "BKSY",
+      "name": "BlackSky Technology Inc",
+      "search_names": ["BlackSky Technology", "BlackSky"],
+      "sectors": ["space", "isr"],
+      "market_cap_tier": "small",
+      "annual_revenue_m": 100,
+      "exchange": "NYSE",
+      "notes": "AI-enabled Gen-3 satellite constellation, defense contracts"
+    },
+    {
+      "ticker": "SPIR",
+      "name": "Spire Global Inc",
+      "search_names": ["Spire Global"],
+      "sectors": ["space"],
+      "market_cap_tier": "small",
+      "annual_revenue_m": 110,
+      "exchange": "NYSE",
+      "notes": "NOAA weather data contracts, maritime AIS, DoD tracking"
+    },
+    {
+      "ticker": "SATL",
+      "name": "Satellogic Inc",
+      "search_names": ["Satellogic"],
+      "sectors": ["space", "isr"],
+      "market_cap_tier": "small",
+      "annual_revenue_m": 40,
+      "exchange": "NASDAQ",
+      "notes": "SAR all-weather imaging, IC community interest"
+    },
+    {
+      "ticker": "RDW",
+      "name": "Redwire Corp",
+      "search_names": ["Redwire Corporation", "Redwire Space", "Redwire"],
+      "sectors": ["space", "defense"],
+      "market_cap_tier": "small-mid",
+      "annual_revenue_m": 450,
+      "exchange": "NYSE",
+      "notes": "Space infrastructure, solar arrays, DoD/NASA mission components"
+    },
+    {
+      "ticker": "LUNR",
+      "name": "Intuitive Machines Inc",
+      "search_names": ["Intuitive Machines"],
+      "sectors": ["space"],
+      "market_cap_tier": "small",
+      "annual_revenue_m": 210,
+      "exchange": "NASDAQ",
+      "notes": "NASA CLPS lunar landers, Space Force"
+    },
+    {
+      "ticker": "CACI",
+      "name": "CACI International Inc",
+      "search_names": ["CACI International", "CACI Inc", "CACI Federal"],
+      "sectors": ["it", "cyber", "intel"],
+      "market_cap_tier": "small-mid",
+      "annual_revenue_m": 7200,
+      "exchange": "NYSE",
+      "notes": "DoD cyber, Navy NSWC, ARKA AI acquisition, DOGE-aligned"
+    },
+    {
+      "ticker": "SAIC",
+      "name": "Science Applications International Corp",
+      "search_names": ["Science Applications International", "SAIC"],
+      "sectors": ["it", "defense"],
+      "market_cap_tier": "small-mid",
+      "annual_revenue_m": 7400,
+      "exchange": "NYSE",
+      "notes": "Federal IT modernization, Navy/Army systems integration"
+    },
+    {
+      "ticker": "RDVT",
+      "name": "Red Violet Inc",
+      "search_names": ["Red Violet", "FOREWARN", "idiCORE"],
+      "sectors": ["it"],
+      "market_cap_tier": "small",
+      "annual_revenue_m": 75,
+      "exchange": "NASDAQ",
+      "notes": "Federal agency identity analytics, fraud detection"
+    },
+    {
+      "ticker": "MYNA",
+      "name": "Mynaric AG",
+      "search_names": ["Mynaric"],
+      "sectors": ["space", "defense"],
+      "market_cap_tier": "small",
+      "annual_revenue_m": 20,
+      "exchange": "NASDAQ",
+      "notes": "Laser comm terminals for Space Force, DoD satellite links"
+    },
+    {
+      "ticker": "ASTS",
+      "name": "AST SpaceMobile Inc",
+      "search_names": ["AST SpaceMobile", "AST & Science"],
+      "sectors": ["space", "defense"],
+      "market_cap_tier": "small-mid",
+      "annual_revenue_m": 30,
+      "exchange": "NASDAQ",
+      "notes": "Space-based cellular broadband, DoD global comms interest"
+    },
+    {
+      "ticker": "AIRO",
+      "name": "Airo Group Holdings Inc",
+      "search_names": ["Airo Group", "Sky-Watch", "AIRO"],
+      "sectors": ["drone", "defense"],
+      "market_cap_tier": "micro",
+      "annual_revenue_m": 12,
+      "exchange": "NASDAQ",
+      "notes": "ISR drone, $190M+ booking pipeline, Blue UAS certification pending"
+    },
+    {
+      "ticker": "MNTS",
+      "name": "Momentus Inc",
+      "search_names": ["Momentus"],
+      "sectors": ["space"],
+      "market_cap_tier": "micro",
+      "annual_revenue_m": 8,
+      "exchange": "NASDAQ",
+      "notes": "In-space transportation, DoD payload delivery"
+    },
+    {
+      "ticker": "SIDU",
+      "name": "Sidus Space Inc",
+      "search_names": ["Sidus Space"],
+      "sectors": ["space"],
+      "market_cap_tier": "micro",
+      "annual_revenue_m": 5,
+      "exchange": "NASDAQ",
+      "notes": "Commercial satellite constellation, NASA and DoD payload contracts"
+    },
+    {
+      "ticker": "AXON",
+      "name": "Axon Enterprise Inc",
+      "search_names": ["Axon Enterprise", "Axon Government"],
+      "sectors": ["border", "law_enforcement"],
+      "market_cap_tier": "large",
+      "annual_revenue_m": 2000,
+      "exchange": "NASDAQ",
+      "notes": "Federal law enforcement, DHS, AI body cam and evidence cloud"
+    }
+  ]
+}

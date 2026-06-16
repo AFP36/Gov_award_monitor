@@ -1,0 +1,112 @@
+{
+  "alert_settings": {
+    "min_award_value_usd": 500000,
+    "high_priority_threshold_usd": 5000000,
+    "run_interval_minutes": 60,
+    "lookback_days": 1,
+    "email": {
+      "enabled": true,
+      "smtp_server": "smtp.gmail.com",
+      "smtp_port": 587,
+      "from_address": "YOUR_GMAIL_ADDRESS",
+      "to_addresses": ["YOUR_GMAIL_ADDRESS"],
+      "app_password": "YOUR_APP_PASSWORD"
+    },
+    "slack": {
+      "enabled": false,
+      "webhook_url": "YOUR_SLACK_WEBHOOK_URL"
+    }
+  },
+
+  "sam_gov": {
+    "api_key": "YOUR_SAM_GOV_API_KEY",
+    "base_url": "https://api.sam.gov/prod/opportunities/v2/search",
+    "awards_url": "https://api.sam.gov/awards/v1/search"
+  },
+
+  "usaspending": {
+    "base_url": "https://api.usaspending.gov/api/v2",
+    "awards_search": "https://api.usaspending.gov/api/v2/search/spending_by_award/"
+  },
+
+  "edgar": {
+    "base_url": "https://efts.sec.gov/LATEST/search-index",
+    "rss_url": "https://efts.sec.gov/LATEST/search-index?q=%22contract+award%22&forms=8-K&dateRange=custom",
+    "company_search": "https://www.sec.gov/cgi-bin/browse-edgar"
+  },
+
+  "keyword_clusters": {
+    "defense_drone": [
+      "unmanned aerial system", "UAS", "loitering munition", "autonomous systems",
+      "counter-UAS", "C-UAS", "swarm drone", "tactical drone", "OTA prototype",
+      "Blue UAS", "small UAS", "group 1", "group 2", "short range reconnaissance",
+      "SRR", "SUAS", "unmanned aircraft"
+    ],
+    "ai_analytics": [
+      "artificial intelligence", "machine learning", "data analytics",
+      "JADC2", "decision support", "predictive analytics", "computer vision",
+      "natural language processing", "autonomous", "AI platform", "generative AI"
+    ],
+    "space_satellite": [
+      "Space Force", "satellite constellation", "earth observation",
+      "geospatial intelligence", "GEOINT", "ISR", "synthetic aperture radar",
+      "SAR imagery", "space domain awareness", "SDA", "launch services",
+      "small satellite", "cubesat", "transport layer", "missile tracking",
+      "on-orbit", "USSF", "NRO", "NGA"
+    ],
+    "cyber_it": [
+      "zero trust", "CISA", "federal cloud", "CMMC", "cybersecurity",
+      "SOC", "IT modernization", "cloud migration", "FedRAMP",
+      "identity access management", "IAM", "DOGE", "GSA schedule",
+      "OASIS", "SEWP", "Polaris", "CIO-SP"
+    ],
+    "border_homeland": [
+      "border surveillance", "CBP", "biometric", "facial recognition",
+      "autonomous border", "DHS", "TSA", "port security", "ICE",
+      "detention", "border security"
+    ],
+    "electronic_warfare": [
+      "electronic warfare", "directed energy", "hypersonic", "JADC2",
+      "electronic countermeasures", "EW", "signals intelligence", "SIGINT",
+      "jamming", "spectrum"
+    ]
+  },
+
+  "contract_types_priority": [
+    "Sole Source",
+    "OTA",
+    "Other Transaction Authority",
+    "Program of Record",
+    "IDIQ",
+    "Indefinite Delivery",
+    "Cost Plus Fixed Fee",
+    "Fixed Price Incentive"
+  ],
+
+  "agencies_priority": [
+    "Department of Defense",
+    "Department of the Army",
+    "Department of the Navy",
+    "Department of the Air Force",
+    "United States Space Force",
+    "Defense Advanced Research Projects Agency",
+    "Defense Intelligence Agency",
+    "National Reconnaissance Office",
+    "National Geospatial-Intelligence Agency",
+    "Department of Homeland Security",
+    "Transportation Security Administration",
+    "Customs and Border Protection",
+    "NASA"
+  ],
+
+  "scoring_weights": {
+    "sole_source_bonus": 3,
+    "ota_bonus": 2,
+    "ic_redacted_bonus": 4,
+    "new_contract_bonus": 2,
+    "recompete_penalty": -1,
+    "tier1_sector_bonus": 2,
+    "tier2_sector_bonus": 1,
+    "revenue_ratio_multiplier": 3
+  }
+}
