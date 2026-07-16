@@ -1,0 +1,40 @@
+# Render Blueprint — deploy the monitor as a persistent Background Worker.
+#
+# Why a Worker (not a Cron Job): the worker process stays alive between the two
+# daily runs, so the de-dup state in seen_awards.json (on the persistent disk
+# below) survives and re-runs don't re-alert. Render Cron Jobs run in fresh
+# ephemeral containers with no disk, which would break idempotency.
+#
+# The internal scheduler (config.json -> alert_settings.run_at_utc) fires the
+# sweep at 12:30 and 22:00 UTC ≈ 8:30 AM / 6:00 PM US Eastern during EDT.
+# NOTE: Render/UTC does not observe DST — in winter (EST) these land one hour
+# earlier (7:30 AM / 5:00 PM ET). Adjust run_at_utc to ["13:30","23:00"] if you
+# want them pinned to Eastern year-round.
+#
+# Secrets are declared with `sync: false` — set their actual values in the
+# Render dashboard (Environment tab). Nothing sensitive lives in this file.
+
+services:
+  - type: worker
+    name: gov-contract-monitor
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    startCommand: python monitor.py
+    disk:
+      name: monitor-state
+      mountPath: /var/monitor-state
+      sizeGB: 1
+    envVars:
+      - key: MONITOR_STATE_DIR
+        value: /var/monitor-state
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: SAM_GOV_API_KEY
+        sync: false
+      - key: EMAIL_SENDER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: EMAIL_RECIPIENTS
+        sync: false
