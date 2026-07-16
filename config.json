@@ -20,9 +20,12 @@
   },
 
   "sam_gov": {
+    "enabled": true,
     "api_key": "YOUR_SAM_GOV_API_KEY",
     "base_url": "https://api.sam.gov/prod/opportunities/v2/search",
-    "awards_url": "https://api.sam.gov/awards/v1/search"
+    "awards_url": "https://api.sam.gov/awards/v1/search",
+    "request_delay_seconds": 12,
+    "max_failures_before_disable": 2
   },
 
   "usaspending": {
