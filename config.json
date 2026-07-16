@@ -3,6 +3,7 @@
     "min_award_value_usd": 500000,
     "high_priority_threshold_usd": 5000000,
     "run_interval_minutes": 60,
+    "run_at_utc": ["12:30", "22:00"],
     "lookback_days": 1,
     "email": {
       "enabled": true,
@@ -108,5 +109,22 @@
     "tier1_sector_bonus": 2,
     "tier2_sector_bonus": 1,
     "revenue_ratio_multiplier": 3
+  },
+
+  "agentic_scoring": {
+    "enabled": true,
+    "model": "claude-sonnet-5",
+    "max_tool_iterations": 6,
+    "max_tokens": 4096,
+    "fallback_to_rule_based": true
+  },
+
+  "value_pillars": {
+    "moat": 2,
+    "returns_on_capital": 2,
+    "balance_sheet": 1.5,
+    "owner_earnings_fcf": 1.5,
+    "management_capital_allocation": 1,
+    "margin_of_safety": 2
   }
 }

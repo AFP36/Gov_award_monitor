@@ -22,15 +22,22 @@ from urllib.parse import urlencode, urljoin
 import requests
 import schedule
 
+import scorer
+
 BASE_DIR = Path(__file__).parent
 CONFIG_PATH = BASE_DIR / "config.json"
 WATCHLIST_PATH = BASE_DIR / "data" / "watchlist.json"
-SEEN_PATH = BASE_DIR / "data" / "seen_awards.json"
+# De-dup state lives in MONITOR_STATE_DIR when set (a Render persistent disk in
+# production), so it survives across the worker's scheduled runs and redeploys.
+# Falls back to the repo's data/ dir for local use.
+STATE_DIR = Path(os.environ.get("MONITOR_STATE_DIR") or (BASE_DIR / "data"))
+SEEN_PATH = STATE_DIR / "seen_awards.json"
 LOG_PATH = BASE_DIR / "logs" / "monitor.log"
 
 # Ensure required directories exist before logging initializes
 (BASE_DIR / "logs").mkdir(exist_ok=True)
 (BASE_DIR / "output").mkdir(exist_ok=True)
+STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -58,7 +65,33 @@ def redact_api_key(text: str) -> str:
     return re.sub(r"(api_key=)[^&\s]+", r"\1***REDACTED***", text)
 
 
+_dotenv_loaded = False
+
+
+def load_dotenv() -> None:
+    """Load KEY=VALUE lines from a local .env into os.environ (once).
+
+    Convenience for local runs so you don't re-export secrets each terminal.
+    Real environment variables always win (Render's dashboard vars take
+    precedence), and .env is gitignored so nothing secret is committed.
+    """
+    global _dotenv_loaded
+    if _dotenv_loaded:
+        return
+    _dotenv_loaded = True
+    env_path = BASE_DIR / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        os.environ.setdefault(key.strip(), val.strip().strip('"').strip("'"))
+
+
 def load_config() -> dict:
+    load_dotenv()
     config = load_json(CONFIG_PATH)
 
     # Environment variables override JSON placeholders (Render cron sets these as secrets)
@@ -140,6 +173,38 @@ def score_award(award: dict, company: dict, config: dict) -> int:
         score += 1
 
     return min(max(score, 1), 10)
+
+
+def score_award_dispatch(award: dict, company: dict, config: dict) -> dict:
+    """Score an award with the agentic scorer, falling back to the rule-based
+    engine if the LLM path is unavailable. Mutates and returns ``award``.
+
+    Sets ``value_score`` (primary sort key), ``catalyst_score``, ``analysis``
+    (the full structured dict, or None on fallback), ``scored_by``, and — for
+    backward compatibility with the email/Slack renderers — ``score``.
+    """
+    cfg = config.get("agentic_scoring", {})
+    if cfg.get("enabled", True):
+        try:
+            analysis = scorer.score_award_agentic(award, company, config)
+            award["analysis"] = analysis
+            award["catalyst_score"] = analysis.get("catalyst", {}).get("score")
+            award["value_score"] = analysis.get("value", {}).get("score")
+            award["score"] = award["value_score"]  # digest is sorted by value score
+            award["scored_by"] = "agentic"
+            return award
+        except scorer.ScorerUnavailable as e:
+            if not cfg.get("fallback_to_rule_based", True):
+                raise
+            log.warning(f"Agentic scorer unavailable ({e}); falling back to rule-based")
+
+    rule_score = score_award(award, company, config)
+    award["analysis"] = None
+    award["catalyst_score"] = rule_score
+    award["value_score"] = rule_score
+    award["score"] = rule_score
+    award["scored_by"] = "rule_based"
+    return award
 
 
 # ---------------------------------------------------------------------------
@@ -378,47 +443,114 @@ def matches_keywords(award: dict, config: dict) -> bool:
 # Email alerts
 # ---------------------------------------------------------------------------
 
-def format_alert_email(alerts: list) -> tuple[str, str]:
-    """Return (subject, html_body) for the alert digest."""
-    high = [a for a in alerts if a["score"] >= 7]
-    medium = [a for a in alerts if 4 <= a["score"] < 7]
-    low = [a for a in alerts if a["score"] < 4]
+def _fmt_pct(v) -> str:
+    return f"{v}%" if isinstance(v, (int, float)) else "n/a"
 
-    subject = f"🚨 Gov Contract Alert — {len(alerts)} new awards ({len(high)} HIGH priority) — {datetime.now().strftime('%b %d %Y')}"
+
+def _render_analysis(a: dict) -> str:
+    """Render the agentic analysis block for one alert (empty on fallback)."""
+    analysis = a.get("analysis")
+    if not analysis:
+        return (
+            "<p style='margin:4px 0;font-size:12px;color:#999;font-style:italic;'>"
+            "Rule-based score (LLM analysis unavailable this run).</p>"
+        )
+
+    catalyst = analysis.get("catalyst", {})
+    value = analysis.get("value", {})
+    pillars = value.get("pillars", {})
+    confidence = analysis.get("confidence", "?")
+
+    pillar_labels = {
+        "moat": "Moat", "returns_on_capital": "ROIC/ROE",
+        "balance_sheet": "Balance sheet", "owner_earnings_fcf": "FCF",
+        "management_capital_allocation": "Mgmt/capital", "margin_of_safety": "Valuation",
+    }
+    pillar_bits = " · ".join(
+        f"{lbl} {pillars.get(k)}" for k, lbl in pillar_labels.items() if pillars.get(k) is not None
+    )
+    metrics = value.get("key_metrics", []) or []
+    metric_bits = " · ".join(
+        f"{m.get('metric')}: {m.get('value')}" for m in metrics[:8]
+        if isinstance(m, dict) and m.get("metric")
+    )
+
+    return f"""
+      <div style='margin-top:8px;padding:8px 10px;background:#fff;border:1px solid #eee;border-radius:4px;'>
+        <p style='margin:2px 0;font-size:12px;color:#333;'>
+          <strong>Why it surfaced (catalyst {catalyst.get('score','?')}/10):</strong>
+          {catalyst.get('rationale','')}
+        </p>
+        <p style='margin:2px 0;font-size:11px;color:#666;'>
+          Materiality: {_fmt_pct(catalyst.get('materiality_pct_mktcap'))} of market cap ·
+          {_fmt_pct(catalyst.get('materiality_pct_revenue'))} of revenue ·
+          {catalyst.get('new_vs_recompete','?')} ·
+          {"already priced in" if catalyst.get('already_priced_in') else "not yet priced in"}
+        </p>
+        <p style='margin:6px 0 2px;font-size:12px;color:#333;'>
+          <strong>Business quality (value {value.get('score','?')}/10):</strong>
+          {value.get('rationale','')}
+        </p>
+        <p style='margin:2px 0;font-size:11px;color:#666;'>Pillars: {pillar_bits}</p>
+        {"<p style='margin:2px 0;font-size:11px;color:#888;'>Metrics: " + metric_bits + "</p>" if metric_bits else ""}
+        <p style='margin:2px 0;font-size:11px;color:#999;'>Confidence: {confidence}</p>
+      </div>"""
+
+
+def format_alert_email(alerts: list) -> tuple[str, str]:
+    """Return (subject, html_body). Sorted/grouped by VALUE score, with the
+    catalyst score shown as the reason each name surfaced."""
+    def vscore(a):
+        return a.get("value_score") if a.get("value_score") is not None else a.get("score", 0)
+
+    high = [a for a in alerts if vscore(a) >= 7]
+    medium = [a for a in alerts if 4 <= vscore(a) < 7]
+    low = [a for a in alerts if vscore(a) < 4]
+
+    subject = (
+        f"🚨 Gov Contract Alert — {len(alerts)} new awards "
+        f"({len(high)} high-value) — {datetime.now().strftime('%b %d %Y')}"
+    )
 
     rows = ""
-    for group_label, group in [("🔴 HIGH PRIORITY (Score 7-10)", high),
-                                ("🟡 MEDIUM (Score 4-6)", medium),
-                                ("⚪ LOW (Score 1-3)", low)]:
+    for group_label, group in [("🟢 HIGH VALUE (Value 7-10)", high),
+                                ("🟡 MEDIUM (Value 4-6)", medium),
+                                ("⚪ LOWER (Value 1-3)", low)]:
         if not group:
             continue
         rows += f"<h3 style='margin:20px 0 8px;color:#333;'>{group_label}</h3>"
         for a in group:
+            vs = vscore(a)
+            cs = a.get("catalyst_score", "?")
             value_str = f"${a['value_usd']:,.0f}" if a["value_usd"] else "Value undisclosed"
             ic_flag = " 🔒 <strong>IC REDACTED</strong>" if a.get("ic_redacted") else ""
+            accent = "#2e7d32" if vs >= 7 else "#f57c00" if vs >= 4 else "#aaa"
             rows += f"""
-            <div style='border:1px solid #e0e0e0;border-left:4px solid {"#d32f2f" if a["score"]>=7 else "#f57c00" if a["score"]>=4 else "#aaa"};
+            <div style='border:1px solid #e0e0e0;border-left:4px solid {accent};
                         padding:12px 16px;margin:8px 0;border-radius:4px;background:#fafafa;'>
               <div style='display:flex;justify-content:space-between;align-items:center;'>
                 <span style='font-size:20px;font-weight:bold;color:#1565c0;'>{a["ticker"]}</span>
-                <span style='background:{"#ffebee" if a["score"]>=7 else "#fff8e1" if a["score"]>=4 else "#f5f5f5"};
-                             color:{"#c62828" if a["score"]>=7 else "#e65100" if a["score"]>=4 else "#666"};
-                             padding:3px 10px;border-radius:12px;font-size:13px;font-weight:500;'>
-                  Score: {a["score"]}/10
+                <span>
+                  <span style='background:#e8f5e9;color:#2e7d32;padding:3px 10px;border-radius:12px;font-size:13px;font-weight:500;'>
+                    Value {vs}/10</span>
+                  &nbsp;
+                  <span style='background:#e3f2fd;color:#1565c0;padding:3px 10px;border-radius:12px;font-size:13px;font-weight:500;'>
+                    Catalyst {cs}/10</span>
                 </span>
               </div>
               <p style='margin:6px 0 2px;font-size:15px;font-weight:500;color:#333;'>{a["company_name"]}</p>
-              <p style='margin:2px 0;font-size:13px;color:#555;'><strong>Value:</strong> {value_str}{ic_flag}</p>
+              <p style='margin:2px 0;font-size:13px;color:#555;'><strong>Award:</strong> {value_str}{ic_flag}</p>
               <p style='margin:2px 0;font-size:13px;color:#555;'><strong>Agency:</strong> {a.get("agency","Unknown")}</p>
               <p style='margin:2px 0;font-size:13px;color:#555;'><strong>Type:</strong> {a.get("contract_type","")}</p>
               <p style='margin:4px 0;font-size:12px;color:#777;'>{a.get("description","")[:200]}...</p>
+              {_render_analysis(a)}
               <div style='margin-top:8px;'>
                 <a href='{a["url"]}' style='font-size:12px;color:#1565c0;'>View award →</a>
                 &nbsp;&nbsp;
-                <a href='https://finance.yahoo.com/quote/{a["ticker"]}' 
+                <a href='https://finance.yahoo.com/quote/{a["ticker"]}'
                    style='font-size:12px;color:#1565c0;'>Yahoo Finance →</a>
                 &nbsp;&nbsp;
-                <a href='https://efts.sec.gov/LATEST/search-index?q=%22{a["ticker"]}%22&forms=8-K' 
+                <a href='https://efts.sec.gov/LATEST/search-index?q=%22{a["ticker"]}%22&forms=8-K'
                    style='font-size:12px;color:#1565c0;'>Latest 8-Ks →</a>
               </div>
             </div>"""
@@ -428,13 +560,15 @@ def format_alert_email(alerts: list) -> tuple[str, str]:
       <div style='background:#1565c0;color:white;padding:16px 20px;border-radius:6px;margin-bottom:20px;'>
         <h2 style='margin:0;'>Gov Contract Monitor</h2>
         <p style='margin:4px 0 0;opacity:.85;font-size:13px;'>
-          {len(alerts)} new awards found · {datetime.now().strftime('%A, %B %d %Y %H:%M UTC')}
+          {len(alerts)} new awards found · sorted by value score · {datetime.now().strftime('%A, %B %d %Y %H:%M UTC')}
         </p>
       </div>
       {rows}
       <p style='font-size:11px;color:#999;margin-top:24px;border-top:1px solid #eee;padding-top:12px;'>
-        Sources: SAM.gov · USASpending.gov · SEC EDGAR<br>
-        This is a research tool. Not financial advice. Always verify before trading.
+        Sources: SAM.gov · USASpending.gov · SEC EDGAR · Anthropic Claude (scoring)<br>
+        Research / screening only — this is <strong>not</strong> a recommendation to buy or sell any
+        security, and not financial advice. Scores are model-generated and may be wrong. Always do
+        your own due diligence and verify before trading.
       </p>
     </body></html>"""
 
@@ -470,12 +604,12 @@ def send_slack(alerts: list, config: dict) -> None:
     cfg = config["alert_settings"].get("slack", {})
     if not cfg.get("enabled") or cfg.get("webhook_url", "").startswith("YOUR_"):
         return
-    high = [a for a in alerts if a["score"] >= 7]
+    high = [a for a in alerts if (a.get("value_score") or a.get("score", 0)) >= 7]
     blocks = [{
         "type": "section",
         "text": {
             "type": "mrkdwn",
-            "text": f"*Gov Contract Monitor* — {len(alerts)} new awards, {len(high)} HIGH priority"
+            "text": f"*Gov Contract Monitor* — {len(alerts)} new awards, {len(high)} high-value"
         }
     }]
     for a in alerts[:5]:
@@ -483,7 +617,8 @@ def send_slack(alerts: list, config: dict) -> None:
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": (f"*{a['ticker']}* — Score {a['score']}/10\n"
+                "text": (f"*{a['ticker']}* — Value {a.get('value_score','?')}/10 · "
+                         f"Catalyst {a.get('catalyst_score','?')}/10\n"
                          f"${a['value_usd']:,.0f} | {a.get('agency','')}\n"
                          f"<{a['url']}|View award>")
             }
@@ -538,10 +673,14 @@ def run_monitor(ticker_filter: Optional[str] = None, days_override: Optional[int
                 if award["source"] != "SEC EDGAR 8-K":
                     continue
 
-            award["score"] = score_award(award, company, config)
+            score_award_dispatch(award, company, config)
             all_alerts.append(award)
             seen.add(uid)
-            log.info(f"  NEW: {ticker} | {award['source']} | ${award['value_usd']:,.0f} | Score {award['score']}")
+            log.info(
+                f"  NEW: {ticker} | {award['source']} | ${award['value_usd']:,.0f} | "
+                f"catalyst {award['catalyst_score']} / value {award['value_score']} "
+                f"({award['scored_by']})"
+            )
 
     save_seen(seen)
 
@@ -561,25 +700,76 @@ def run_monitor(ticker_filter: Optional[str] = None, days_override: Optional[int
     log.info("=== Monitor run complete ===\n")
 
 
+def run_test_score(ticker: str) -> None:
+    """Smoke test: score ONE synthetic award for `ticker` to prove the live
+    agentic path works (valid key → Claude responds → structured output parses,
+    with real EDGAR/quote enrichment). Sends no email, touches no seen-state.
+    """
+    config = load_config()
+    watchlist = load_json(WATCHLIST_PATH)["watchlist"]
+    company = next((c for c in watchlist if c["ticker"].upper() == ticker.upper()), None)
+    if not company:
+        log.error(f"Ticker {ticker} not in watchlist — cannot build a test award")
+        return
+
+    award = {
+        "source": "TEST",
+        "id": f"test_{ticker.lower()}",
+        "company_name": company["name"],
+        "ticker": company["ticker"],
+        "description": "SYNTHETIC TEST AWARD — sole-source OTA prototype for unmanned "
+        "aerial / autonomous systems. Not a real contract; used to exercise the scorer.",
+        "value_usd": 50_000_000,
+        "agency": "United States Space Force",
+        "contract_type": "Sole Source / OTA",
+        "award_date": datetime.utcnow().strftime("%Y-%m-%d"),
+        "ic_redacted": False,
+        "is_new": True,
+        "url": "https://example.com/test-award",
+    }
+
+    log.info(f"=== SMOKE TEST: scoring a synthetic award for {ticker} ===")
+    score_award_dispatch(award, company, config)
+    print("\n" + "=" * 60)
+    print(f"scored_by: {award['scored_by']}  |  catalyst: {award['catalyst_score']}  |  value: {award['value_score']}")
+    print("=" * 60)
+    print(json.dumps(award.get("analysis") or {"note": "rule-based fallback (no analysis dict)"}, indent=2, default=str))
+    if award["scored_by"] == "rule_based":
+        log.warning("Fell back to rule-based — set ANTHROPIC_API_KEY to test the live LLM path.")
+    else:
+        log.info("Live agentic scoring succeeded ✅")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Gov Contract Monitor")
     parser.add_argument("--once", action="store_true", help="Run a single sweep then exit")
     parser.add_argument("--ticker", metavar="TICKER", help="Check a single ticker (e.g. --ticker KTOS)")
     parser.add_argument("--days", type=int, metavar="N", help="Look back N days instead of the config default")
+    parser.add_argument("--test-score", metavar="TICKER", help="Smoke test: score one synthetic award for TICKER and exit")
     args = parser.parse_args()
 
     log.info("Gov Contract Monitor starting...")
     config = load_config()
-    interval = config["alert_settings"]["run_interval_minutes"]
+
+    if args.test_score:
+        run_test_score(args.test_score)
+        return
 
     if args.once or args.ticker or args.days:
         run_monitor(ticker_filter=args.ticker, days_override=args.days)
         return
 
-    # Continuous mode: run immediately then on schedule
+    # Continuous worker mode: run once on startup, then daily at the configured
+    # UTC times. Runs as a persistent Render Worker so de-dup state (on the
+    # mounted disk) survives between the scheduled runs.
+    run_times = config["alert_settings"].get("run_at_utc") or ["12:30", "22:00"]
     run_monitor()
-    schedule.every(interval).minutes.do(run_monitor)
-    log.info(f"Scheduler active — running every {interval} minutes. Ctrl+C to stop.")
+    for t in run_times:
+        schedule.every().day.at(t).do(run_monitor)
+    log.info(
+        f"Scheduler active — running daily at UTC {', '.join(run_times)} "
+        f"(≈ 8:30 AM / 6:00 PM ET during EDT). Ctrl+C to stop."
+    )
 
     while True:
         schedule.run_pending()

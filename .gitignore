@@ -1,6 +1,7 @@
 logs/
 output/
 data/seen_awards.json
+data/cik_map.json
 __pycache__/
 *.pyc
 .env
