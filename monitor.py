@@ -211,21 +211,55 @@ def score_award_dispatch(award: dict, company: dict, config: dict) -> dict:
 # SAM.gov
 # ---------------------------------------------------------------------------
 
+# SAM.gov circuit breaker. SAM is a flaky, auth-walled, quota-limited secondary
+# source (see CLAUDE.md). Rather than block the whole watchlist sweep retrying a
+# rate-limited endpoint, we fail fast on a 429/error and, after a few strikes,
+# disable SAM for the remainder of the run and rely on USASpending + EDGAR.
+_sam_breaker = {"strikes": 0, "disabled": False}
+
+
+def reset_sam_breaker() -> None:
+    _sam_breaker["strikes"] = 0
+    _sam_breaker["disabled"] = False
+
+
 def fetch_sam_awards(company: dict, config: dict, days_back: int = 1) -> list:
-    """Query SAM.gov contract awards for a company."""
-    api_key = config["sam_gov"].get("api_key", "")
+    """Query SAM.gov contract awards for a company (secondary, best-effort).
+
+    Fails fast: a 429/error is logged and skipped (no long blocking retry), and
+    after ``max_failures_before_disable`` strikes SAM is switched off for the
+    rest of the run so one dead source can't wedge the sweep.
+    """
+    sam_cfg = config.get("sam_gov", {})
+    if not sam_cfg.get("enabled", True):
+        return []
+    if _sam_breaker["disabled"]:
+        return []
+
+    api_key = sam_cfg.get("api_key", "")
     if not api_key or not api_key.startswith("SAM-"):
         log.debug("SAM.gov API key not configured — skipping SAM search")
         return []
 
-    awards = []
-    since_dt = datetime.utcnow() - timedelta(days=days_back)
-    today_dt = datetime.utcnow()
-    # SAM.gov requires MM/DD/YYYY date format
-    since = since_dt.strftime("%m/%d/%Y")
-    today = today_dt.strftime("%m/%d/%Y")
+    max_failures = sam_cfg.get("max_failures_before_disable", 2)
+    req_delay = sam_cfg.get("request_delay_seconds", 12)
 
-    # SAM.gov free tier: ~10 req/min, ~1000 req/day.
+    def _record_failure(reason: str) -> None:
+        _sam_breaker["strikes"] += 1
+        log.warning(
+            f"SAM.gov {reason} (strike {_sam_breaker['strikes']}/{max_failures}) — skipping"
+        )
+        if _sam_breaker["strikes"] >= max_failures:
+            _sam_breaker["disabled"] = True
+            log.warning(
+                "SAM.gov disabled for the rest of this run — relying on USASpending + EDGAR"
+            )
+
+    awards = []
+    # SAM.gov requires MM/DD/YYYY date format
+    since = (datetime.utcnow() - timedelta(days=days_back)).strftime("%m/%d/%Y")
+    today = datetime.utcnow().strftime("%m/%d/%Y")
+
     # Use only first (most specific) search name to stay within limits.
     for name in company["search_names"][:1]:
         params = {
@@ -237,15 +271,16 @@ def fetch_sam_awards(company: dict, config: dict, days_back: int = 1) -> list:
             "limit": 50,
             "offset": 0,
         }
-        url = config["sam_gov"]["base_url"] + "?" + urlencode(params)
-        time.sleep(12)  # SAM.gov free tier: 5 req/min safe margin
+        url = sam_cfg["base_url"] + "?" + urlencode(params)
+        time.sleep(req_delay)  # stay under the free-tier per-minute limit
         try:
-            r = requests.get(url, timeout=30)
+            r = requests.get(url, timeout=20)
             if r.status_code == 429:
-                log.warning(f"SAM.gov rate limit hit for {name} — waiting 90s")
-                time.sleep(90)
-                r = requests.get(url, timeout=30)
+                # Quota/rate blocked — fail fast; the 90s retry just 429s again.
+                _record_failure("rate-limited")
+                return awards
             r.raise_for_status()
+            _sam_breaker["strikes"] = 0  # a good response resets the breaker
             data = r.json()
             hits = data.get("opportunitiesData", [])
             for h in hits:
@@ -270,7 +305,7 @@ def fetch_sam_awards(company: dict, config: dict, days_back: int = 1) -> list:
                     "is_new": True,
                 })
         except Exception as e:
-            log.warning(f"SAM.gov error for {name}: {redact_api_key(str(e))}")
+            _record_failure(f"error ({redact_api_key(str(e))})")
 
     return awards
 
@@ -638,6 +673,7 @@ def run_monitor(ticker_filter: Optional[str] = None, days_override: Optional[int
     config = load_config()
     watchlist = load_json(WATCHLIST_PATH)["watchlist"]
     seen = load_seen()
+    reset_sam_breaker()  # give SAM a fresh chance each run; it self-disables if blocked
     min_value = config["alert_settings"]["min_award_value_usd"]
     days_back = days_override if days_override is not None else config["alert_settings"].get("lookback_days", 1)
 
