@@ -23,7 +23,6 @@ from urllib.parse import urlencode, urljoin
 import requests
 import schedule
 
-import dod
 import scorer
 
 BASE_DIR = Path(__file__).parent
@@ -822,27 +821,19 @@ def run_monitor(ticker_filter: Optional[str] = None, days_override: Optional[int
 
     all_alerts = []
 
-    # DoD daily contracts are a single cross-watchlist digest — fetch once (via
-    # Wayback; see dod.py) and distribute matches per company below. Uses its own
-    # wider lookback to catch the ~1-day-late archived article.
-    dod_by_ticker = dod.fetch_dod_contracts(
-        watchlist, config, config.get("dod", {}).get("lookback_days", 3)
-    )
-
     for company in watchlist:
         ticker = company["ticker"]
         log.info(f"Checking {ticker} — {company['name']}")
 
         raw_awards = []
-        raw_awards += dod_by_ticker.get(ticker, [])
         raw_awards += fetch_press_releases(company, config, days_back)
         raw_awards += fetch_usaspending_awards(company, config, days_back)
         raw_awards += fetch_sam_awards(company, config, days_back)
         raw_awards += fetch_edgar_filings(company, days_back)
 
-        # Disclosures / already-matched sources bypass the keyword gate that the
-        # bulk feeds go through (a DoD digest hit is itself a watchlist match).
-        disclosure_sources = {"SEC EDGAR 8-K", "Press Release", "DoD Contracts"}
+        # Self-announced disclosures are already filtered to award-like items,
+        # so they bypass the keyword/dollar gates that the bulk feeds go through.
+        disclosure_sources = {"SEC EDGAR 8-K", "Press Release"}
 
         for award in raw_awards:
             uid = award["id"]
