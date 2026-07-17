@@ -37,6 +37,13 @@
     "enabled": true
   },
 
+  "dod": {
+    "enabled": true,
+    "lookback_days": 3,
+    "max_articles": 5,
+    "timeout_seconds": 20
+  },
+
   "edgar": {
     "base_url": "https://efts.sec.gov/LATEST/search-index",
     "rss_url": "https://efts.sec.gov/LATEST/search-index?q=%22contract+award%22&forms=8-K&dateRange=custom",
