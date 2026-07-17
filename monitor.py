@@ -579,13 +579,31 @@ def fetch_press_releases(company: dict, config: dict, days_back: int = 1) -> lis
 # Keyword matching
 # ---------------------------------------------------------------------------
 
+_kw_pattern_cache: dict = {}
+
+
+def _keyword_pattern(clusters: dict):
+    """Compile (and cache) a word-boundary alternation of all cluster keywords.
+
+    Word boundaries stop short acronyms from matching inside unrelated words
+    (e.g. "ICE" must not match "off​ice", "EW" must not match "news"), while
+    multi-word phrases ("space domain awareness") and hyphenated terms ("C-UAS")
+    still match as whole tokens.
+    """
+    kws = tuple(kw.lower() for cluster in clusters.values() for kw in cluster)
+    pattern = _kw_pattern_cache.get(kws)
+    if pattern is None:
+        alt = "|".join(re.escape(k) for k in kws)
+        pattern = re.compile(r"\b(?:" + alt + r")\b") if alt else None
+        _kw_pattern_cache[kws] = pattern
+    return pattern
+
+
 def matches_keywords(award: dict, config: dict) -> bool:
-    """Return True if award description matches any keyword cluster."""
+    """Return True if award description matches any keyword cluster (whole-word)."""
     text = (award.get("description", "") + " " + award.get("agency", "")).lower()
-    all_keywords = []
-    for cluster in config["keyword_clusters"].values():
-        all_keywords.extend(cluster)
-    return any(kw.lower() in text for kw in all_keywords)
+    pattern = _keyword_pattern(config["keyword_clusters"])
+    return bool(pattern.search(text)) if pattern else False
 
 
 # ---------------------------------------------------------------------------
