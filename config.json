@@ -20,7 +20,7 @@
   },
 
   "sam_gov": {
-    "enabled": true,
+    "enabled": false,
     "api_key": "YOUR_SAM_GOV_API_KEY",
     "base_url": "https://api.sam.gov/prod/opportunities/v2/search",
     "awards_url": "https://api.sam.gov/awards/v1/search",
@@ -31,6 +31,10 @@
   "usaspending": {
     "base_url": "https://api.usaspending.gov/api/v2",
     "awards_search": "https://api.usaspending.gov/api/v2/search/spending_by_award/"
+  },
+
+  "press_release": {
+    "enabled": true
   },
 
   "edgar": {

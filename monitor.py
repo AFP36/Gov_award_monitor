@@ -6,6 +6,7 @@ matching a watchlist of small/micro-cap defense & tech tickers.
 """
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -462,6 +463,119 @@ def _parse_value(raw) -> float:
 
 
 # ---------------------------------------------------------------------------
+# Company press releases (RSS) — same-day self-announced awards
+# ---------------------------------------------------------------------------
+
+# Win-verb phrases that signal a press-release TITLE is announcing an award.
+# Deliberately stronger than a bare "contract" (which shows up in earnings
+# titles too, e.g. "backlog including $60M in contracts"): we want the verb of
+# actually winning work.
+_AWARD_SIGNAL_TERMS = [
+    "awarded", "wins", "won ", "secures", "selected to", "selected by",
+    "selected for", "receives contract", "receives order", "receives award",
+    "receives task order", "task order", "delivery order", "idiq",
+    "ota ", "other transaction", "sole source", "sole-source", "prime contract",
+    "subcontract", "contract award", "contract to", "contract for",
+    "contract from", "production order", "to provide", "to supply", "to deliver",
+]
+
+# If any of these appear in the title it's almost certainly earnings / admin /
+# capital-markets news, not a fresh award — reject even if a win-verb matched.
+_AWARD_EXCLUDE_TERMS = [
+    "results", "quarter", "guidance", "earnings", "to report", "financial",
+    "fiscal", "appoint", "personnel", "conference call", "webcast", "dividend",
+    "offering", "annual meeting", "board of directors", "outlook", "prices ",
+    "investor", "presentation",
+]
+
+
+def looks_like_award(text: str, config: dict) -> bool:
+    """True if a press-release title reads like a fresh contract award."""
+    pr_cfg = config.get("press_release", {})
+    positives = pr_cfg.get("award_signal_terms") or _AWARD_SIGNAL_TERMS
+    negatives = pr_cfg.get("award_exclude_terms") or _AWARD_EXCLUDE_TERMS
+    t = text.lower()
+    if any(term in t for term in negatives):
+        return False
+    return any(term in t for term in positives)
+
+
+def fetch_press_releases(company: dict, config: dict, days_back: int = 1) -> list:
+    """Pull recent contract-award press releases from a company's RSS feed.
+
+    This is the fastest same-day signal for a material award — companies
+    announce their wins immediately. Only entries that look like awards are
+    returned. Degrades gracefully: a missing/blocked/malformed feed (some IR
+    hosts sit behind Akamai/Cloudflare) yields [] rather than raising, and the
+    EDGAR 8-K path backstops any company without a working feed.
+    """
+    if not config.get("press_release", {}).get("enabled", True):
+        return []
+    feed_url = company.get("rss_feed")
+    if not feed_url:
+        return []
+
+    try:
+        import feedparser
+    except ImportError:
+        log.warning("feedparser not installed — skipping press-release feeds")
+        return []
+
+    # Fetch with requests (which enforces a timeout) rather than letting
+    # feedparser fetch — feedparser has no timeout, so a blocked/slow IR host
+    # (several sit behind Akamai/Cloudflare) could otherwise hang the sweep.
+    timeout = config.get("press_release", {}).get("feed_timeout_seconds", 12)
+    try:
+        r = requests.get(
+            feed_url,
+            timeout=timeout,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; GovContractMonitor/1.0)"},
+        )
+        r.raise_for_status()
+    except Exception as e:
+        log.warning(f"Press-release feed unavailable for {company['ticker']}: {e}")
+        return []
+    parsed = feedparser.parse(r.content)
+
+    cutoff = datetime.utcnow() - timedelta(days=days_back)
+    releases = []
+    for entry in parsed.entries:
+        title = entry.get("title", "")
+        summary = entry.get("summary", "")
+        text = f"{title} {summary}"
+        # Detect awards from the TITLE only — award PRs headline the win, while
+        # earnings/hire PRs that merely mention "contract" in the body don't.
+        if not looks_like_award(title, config):
+            continue
+        # Window-filter by published date; skip undated entries so we don't
+        # re-surface an old backlog (de-dup on seen_awards.json also guards).
+        published = entry.get("published_parsed") or entry.get("updated_parsed")
+        if not published:
+            continue
+        pub_dt = datetime(*published[:6])
+        if pub_dt < cutoff:
+            continue
+        link = entry.get("link", "") or entry.get("id", "")
+        guid = entry.get("id") or link or title
+        uid = "pr_" + hashlib.sha1(f"{company['ticker']}|{guid}".encode()).hexdigest()[:16]
+        releases.append({
+            "source": "Press Release",
+            "id": uid,
+            "company_name": company["name"],
+            "ticker": company["ticker"],
+            "description": title + (f" — {summary[:300]}" if summary else ""),
+            "value_usd": _extract_dollar_from_text(text),
+            "agency": _extract_agency_from_text(text),
+            "contract_type": "Company Press Release",
+            "award_date": pub_dt.strftime("%Y-%m-%d"),
+            "url": link,
+            "ic_redacted": False,
+            "is_new": True,
+        })
+    return releases
+
+
+# ---------------------------------------------------------------------------
 # Keyword matching
 # ---------------------------------------------------------------------------
 
@@ -694,19 +808,25 @@ def run_monitor(ticker_filter: Optional[str] = None, days_override: Optional[int
         log.info(f"Checking {ticker} — {company['name']}")
 
         raw_awards = []
+        raw_awards += fetch_press_releases(company, config, days_back)
         raw_awards += fetch_usaspending_awards(company, config, days_back)
         raw_awards += fetch_sam_awards(company, config, days_back)
         raw_awards += fetch_edgar_filings(company, days_back)
+
+        # Self-announced disclosures are already filtered to award-like items,
+        # so they bypass the keyword/dollar gates that the bulk feeds go through.
+        disclosure_sources = {"SEC EDGAR 8-K", "Press Release"}
 
         for award in raw_awards:
             uid = award["id"]
             if uid in seen:
                 continue
-            if award["value_usd"] < min_value and not award.get("ic_redacted"):
+            if (award["value_usd"] < min_value
+                    and not award.get("ic_redacted")
+                    and award["source"] != "Press Release"):
                 continue
             if not matches_keywords(award, config) and not award.get("ic_redacted"):
-                # Still include EDGAR filings even without keyword match
-                if award["source"] != "SEC EDGAR 8-K":
+                if award["source"] not in disclosure_sources:
                     continue
 
             score_award_dispatch(award, company, config)
