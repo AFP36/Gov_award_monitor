@@ -732,7 +732,8 @@ def format_alert_email(alerts: list) -> tuple[str, str]:
       </div>
       {rows}
       <p style='font-size:11px;color:#999;margin-top:24px;border-top:1px solid #eee;padding-top:12px;'>
-        Sources: SAM.gov · USASpending.gov · SEC EDGAR · Anthropic Claude (scoring)<br>
+        Sent by the <strong>Micro-Cap Gov Contract Monitor</strong> (investor track) · repo: AFP36/Gov_award_monitor<br>
+        Sources: company press releases · USASpending.gov · SEC EDGAR · Anthropic Claude (scoring)<br>
         Research / screening only — this is <strong>not</strong> a recommendation to buy or sell any
         security, and not financial advice. Scores are model-generated and may be wrong. Always do
         your own due diligence and verify before trading.
